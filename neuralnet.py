@@ -21,11 +21,7 @@ class Activation:
 class Loss:
     # L(y,x) = −∑(c=1 -> M) y_o,c * log(po,c)
     def categorical_crossentropy(self, p, y):
-        M = len(y)
-        CE = 0
-        for c in range(M):
-            CE += y[c] * np.log(p[c])
-        return -CE
+        return -np.sum( y * np.log(p) )
 
 
 class Layer(object):
@@ -70,24 +66,39 @@ class NeuralNet(object):
         self.activations.append(self.output_layer.activation)
 
     def feed_forward(self, x):
-        intermediate_outputs = []
+        intermediate_outputs = [x]
         for w_matrix, bias, activation in zip(self.w_matrices, self.bias_vectors, self.activations):
             x = np.dot(x, w_matrix) + bias
             x = Activation().apply_activation(x, activation)
             intermediate_outputs.append(x)
         return x, np.array(intermediate_outputs)
 
-    def back_propagate(self, x, y, p, i_outs):
-        error = y-p
-        delta = error*Activation().sigmoid_prime(p)
-        for i in range(len(self.w_matrices)-1):
-            ii = len(self.w_matrices)-1-i
-            i_out = np.array(i_outs[ii])
-            self.w_matrices[ii] += np.dot(i_out.transpose(), delta)
+    def back_propagate(self, x, y, p, i_outs, lr=10e-4):
+        ### Calculate changes in output 
+        p = np.array(p).reshape((1,len(p)))
+        y = np.array(y).reshape((1,len(y)))
+        i_outs = np.array(i_outs)
+        dcost_dzo = p - y
+        dzo_dwo = np.array(i_outs[-2]).reshape( (1, len(i_outs[-2])) )
 
-            error = np.dot(delta, self.w_matrices[ii].transpose())
-            delta = error*Activation().sigmoid_prime(np.array(i_outs[ii-1]))
+        dcost_wo = np.dot(dzo_dwo.T, dcost_dzo)
+        dcost_bo = dcost_dzo
 
+        self.w_matrices[-1] -= lr * dcost_wo
+        self.bias_vectors[-1] -= lr * dcost_bo.reshape(dcost_bo.shape[1])
+
+        ### Rest of the layers
+        # for i in reversed( range(1, len(self.w_matrices)) ):
+        for i in range(1, len(self.w_matrices)-1 ):
+            dzo_dah = self.w_matrices[-i]
+            dcost_dah = np.dot(dcost_dzo, dzo_dah.T)
+            dah_dzh = Activation().sigmoid_derivative(i_outs[-i-1])
+            dzh_dwh = np.array(i_outs[-i-2]).reshape(1,len(i_outs[-i-2]))
+            dcost_wh = np.dot(dzh_dwh.T, dah_dzh * dcost_dah)
+            dcost_bh = dcost_dah * dah_dzh
+
+            self.w_matrices[-i-1] -= lr * dcost_wh
+            self.bias_vectors[-i-1] -= lr * dcost_bh.reshape(dcost_bh.shape[1])
 
     def train(self, x, y, epochs=100):
         x = np.array(x)
@@ -102,12 +113,13 @@ class NeuralNet(object):
 
 
 if __name__ == "__main__":
+    np.random.seed(22)
     nn = NeuralNet()
     nn.add_input_layer(10)
-    nn.add_hidden_layer(25)
     nn.add_hidden_layer(12)
+    nn.add_hidden_layer(6)
     nn.add_output_layer(8, activation="softmax")
     nn.compile()
     x = [0,.1,.2,.3,.4,.5,.6,.7,.8,.9]
-    y = [0,0,1,0,0,0,0,0]
+    y = [0,0,0,0,0,0,0,1]
     nn.train(x,y)
