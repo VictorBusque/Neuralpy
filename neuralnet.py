@@ -21,6 +21,7 @@ class Activation:
         if activation == "linear": return self.linear(x)
         elif activation == "softmax": return self.softmax(x)
 
+
 class Loss:
     # L(y,x) = −∑(c=1 -> M) y_o,c * log(po,c)
     def categorical_crossentropy(self, p, y):
@@ -114,30 +115,39 @@ class NeuralNet(object):
             self.bias_vectors[-i-1] -= lr * dcost_bh.reshape(dcost_bh.shape[1])
             dcost_dzo = dcost_dah
 
-    def train(self, x, y, epochs=100):
-        x = np.array(x)
-        y = np.array(y)
+    def train(self, X, Y, epochs=100):
+        X = np.array(X)
+        Y = np.array(Y)
+        n_samples = len(X)
         for i in range(epochs):
+            loss = 0
             print(f"===== epoch {i+1}/{epochs} =====")
-            t = time()
-            p, i_outs = self.feed_forward(x)
-            print("Prediction: {}".format(p))
-            loss = Loss().categorical_crossentropy(p, y)
-            print("Loss: {}".format(loss))
-            self.back_propagate(x, y, p, i_outs)
+            for x, y in zip(X,Y):
+                t = time()
+                p, i_outs = self.feed_forward(x)
+                loss += Loss().categorical_crossentropy(p, y)
+                self.back_propagate(x, y, p, i_outs)
+            print(f"loss = {loss/n_samples}")
             print(f"epoch {i} took {round(time()-t, 4)} seconds.")
 
 
 if __name__ == "__main__":
     np.random.seed(22)
+
+    num_samples = 100
+
     nn = NeuralNet()
-    nn.add_input_layer(10)
+    nn.add_input_layer(1)
     nn.add_hidden_layer(128)
     nn.add_hidden_layer(64)
     nn.add_hidden_layer(32)
     nn.add_hidden_layer(16)
-    nn.add_output_layer(8, activation="softmax")
+    nn.add_output_layer(2, activation="softmax")
     nn.compile()
-    x = [0,.1,.2,.3,.4,.5,.6,.7,.8,.9]
-    y = [0,0,0,0,1,0,0,0]
-    nn.train(x,y)
+    x = [ [np.random.randint(0,10)/10] for _ in range(num_samples) ]
+    y = [ [1,0] if int(num[0]*10) % 2 == 0 else [0,1] for num in x]
+    nn.train(x, y)
+
+
+    p, _ = nn.feed_forward([0.3])
+    print(p)
