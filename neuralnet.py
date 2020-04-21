@@ -1,5 +1,5 @@
 import numpy as np
-
+from time import time
 
 class Activation:
     def softmax(self, x):
@@ -68,6 +68,15 @@ class NeuralNet(object):
         self.bias_vectors.append( np.random.rand(self.output_layer.n_neurons) )
         self.activations.append(self.output_layer.activation)
 
+        total_params = 0
+        for i, w_matrix in enumerate(self.w_matrices):
+            print("=====================")
+            params = w_matrix.shape[0]*w_matrix.shape[1] + len(self.bias_vectors[i])
+            total_params += params
+            print(f"Layer {i}:\n\tshape: {w_matrix.shape}\n\tn_params: {params}")
+        print("================================")
+        print(f"Network has a total of {total_params} parameters.")
+
     def feed_forward(self, x):
         intermediate_outputs = [x]
         for w_matrix, bias, activation in zip(self.w_matrices, self.bias_vectors, self.activations):
@@ -109,12 +118,14 @@ class NeuralNet(object):
         x = np.array(x)
         y = np.array(y)
         for i in range(epochs):
-            print(f"===== epoch {i} =====")
+            print(f"===== epoch {i+1}/{epochs} =====")
+            t = time()
             p, i_outs = self.feed_forward(x)
             print("Prediction: {}".format(p))
             loss = Loss().categorical_crossentropy(p, y)
             print("Loss: {}".format(loss))
             self.back_propagate(x, y, p, i_outs)
+            print(f"epoch {i} took {round(time()-t, 4)} seconds.")
 
 
 if __name__ == "__main__":
