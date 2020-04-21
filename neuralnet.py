@@ -3,8 +3,11 @@ import numpy as np
 
 class Activation:
     def softmax(self, x):
-        sum_exp = sum([np.exp(i) for i in x])
-        return [ np.exp(x_i)/sum_exp for x_i in x ]
+        x = np.array(x)
+        x = x - max(x)
+        x_exp = np.exp(x)
+        result = x_exp/np.sum(x_exp)
+        return result
 
     def linear(self, x):
         return x
@@ -21,7 +24,7 @@ class Activation:
 class Loss:
     # L(y,x) = −∑(c=1 -> M) y_o,c * log(po,c)
     def categorical_crossentropy(self, p, y):
-        return -np.sum( y * np.log(p) )
+        return -np.sum( y * np.log(p+1e-9) )
 
 
 class Layer(object):
@@ -90,6 +93,7 @@ class NeuralNet(object):
         ### Rest of the layers
         # for i in reversed( range(1, len(self.w_matrices)) ):
         for i in range(1, len(self.w_matrices)-1 ):
+
             dzo_dah = self.w_matrices[-i]
             dcost_dah = np.dot(dcost_dzo, dzo_dah.T)
             dah_dzh = Activation().sigmoid_derivative(i_outs[-i-1])
@@ -99,6 +103,7 @@ class NeuralNet(object):
 
             self.w_matrices[-i-1] -= lr * dcost_wh
             self.bias_vectors[-i-1] -= lr * dcost_bh.reshape(dcost_bh.shape[1])
+            dcost_dzo = dcost_dah
 
     def train(self, x, y, epochs=100):
         x = np.array(x)
@@ -116,10 +121,12 @@ if __name__ == "__main__":
     np.random.seed(22)
     nn = NeuralNet()
     nn.add_input_layer(10)
-    nn.add_hidden_layer(12)
-    nn.add_hidden_layer(6)
+    nn.add_hidden_layer(128)
+    nn.add_hidden_layer(64)
+    nn.add_hidden_layer(32)
+    nn.add_hidden_layer(16)
     nn.add_output_layer(8, activation="softmax")
     nn.compile()
     x = [0,.1,.2,.3,.4,.5,.6,.7,.8,.9]
-    y = [0,0,0,0,0,0,0,1]
+    y = [0,0,0,0,1,0,0,0]
     nn.train(x,y)
