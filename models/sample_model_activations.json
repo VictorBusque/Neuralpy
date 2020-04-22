@@ -1,5 +1,4 @@
 [
-    "relu",
-    "relu",
+    "linear",
     "linear"
 ]

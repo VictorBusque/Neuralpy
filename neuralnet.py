@@ -13,36 +13,46 @@ class Activation:
         if function == "sigmoid": self.function = Sigmoid()
         if function == "linear": self.function = Linear()
         if function == "relu": self.function = ReLU()
-        if function == "sigmoid_derivative": self.function = SigmoidDerivative()
 
     def __apply__(self, x):
         return self.function.__apply__(x)
+
+    def __derivative__(self, x):
+        return self.function.__derivative__(x)
 
 class Softmax:
     def __apply__(self, x):
         x = np.array(x)
         x = x - max(x)
         x_exp = np.exp(x)
-        result = x_exp/np.sum(x_exp)
-        return result
+        return x_exp/np.sum(x_exp)
+
+    def __derivative__(self, x):
+        # Reshape the 1-d softmax to 2-d so that np.dot will do the matrix multiplication
+        s = self.__apply__(x)
+        s = s.reshape(-1,1)
+        return np.diagflat(s) - np.dot(s, s.T)
 
 class Sigmoid:
     def __apply__(self, x):
         return 1/(1+np.exp(-x))
 
+    def __derivative__(self, x):
+        return np.exp(np.negative(x)) / ((1 + np.exp(np.negative(x)) )**2)
+
 class Linear:
     def __apply__(self, x):
         return x
+
+    def __derivative__(self, x):
+        return 1
 
 class ReLU:
     def __apply__(self, x):
         return np.maximum(0, x)
 
-class SigmoidDerivative:
-    def __apply__(self, x):
-        f = 1/(1 + np.exp( np.negative(x) ))
-        df = f * (1 - f)
-        return df
+    def __derivative__(self, x):
+        return 1
 
 ###################################################################
 #                           LOSSES
@@ -92,7 +102,6 @@ class NeuralNet(object):
         self.bias_vectors = []
         self.activations = []
         self.loss = None
-        self.backprop_activation = Activation("sigmoid_derivative")
 
     def add_input_layer(self, n_neurons):
         self.input_layer = Layer(n_neurons)
@@ -120,67 +129,67 @@ class NeuralNet(object):
         self.bias_vectors.append( np.random.rand(self.output_layer.n_neurons) )
         self.activations.append( Activation(self.output_layer.activation) )
 
+        self.w_matrices = np.array(self.w_matrices)
+        self.bias_vectors = np.array(self.bias_vectors)
+
         total_params = 0
         for i, w_matrix in enumerate(self.w_matrices):
             print("=====================")
             params = w_matrix.shape[0]*w_matrix.shape[1] + len(self.bias_vectors[i])
+            activation_function_name = self.activations[i].function_name
             total_params += params
-            print(f"Layer {i}:\n\tshape: {w_matrix.shape}\n\tn_params: {params}")
+            print(f"Layer {i}:\n\tshape: {w_matrix.shape}\n\tn_params: {params}\n\tactivation: {activation_function_name}")
         print("================================")
         print(f"Network has a total of {total_params} parameters.")
         self.loss = Loss(loss)
 
     def feed_forward(self, x):
-        intermediate_outputs = [x]
+        a_s = [x]
+        z_s = [x]
         for w_matrix, bias, activation in zip(self.w_matrices, self.bias_vectors, self.activations):
             x = np.dot(x, w_matrix) + bias
+            z_s.append(x)
             x = activation.__apply__(x)
-            intermediate_outputs.append(x)
-        return x, np.array(intermediate_outputs)
+            a_s.append(x)
+        return x, np.array(z_s), np.array(a_s)
 
-    def back_propagate(self, x, y, p, i_outs, lr=10e-4):
-        ### Calculate changes in output 
+    def back_propagate_c(self, x, y, p, z_s, a_s, lr=10e-4):
         p = np.array(p).reshape((1,len(p)))
         y = np.array(y).reshape((1,len(y)))
-        i_outs = np.array(i_outs)
-        dcost_dzo = p - y
-        dzo_dwo = np.array(i_outs[-2]).reshape( (1, len(i_outs[-2])) )
 
-        dcost_wo = np.dot(dzo_dwo.T, dcost_dzo)
-        dcost_bo = dcost_dzo
+        dL = 1
+        da = dL * (p-y) # da_1 ~ dy
+        dz = da * self.activations[-1].__derivative__(z_s[-1])
+        
+        dw = np.dot(a_s[-2].reshape( (len(a_s[-2]), 1) ), dz)
+        db = dz.reshape(-1)
+        
+        self.w_matrices[-1] -= lr * dw
+        self.bias_vectors[-1] -= lr * db
 
-        self.w_matrices[-1] -= lr * dcost_wo
-        self.bias_vectors[-1] -= lr * dcost_bo.reshape(dcost_bo.shape[1])
+        for l in range( 2, len(self.w_matrices) ):
+            da = np.dot(dz, self.w_matrices[-l+1].T)
+            dz = da * self.activations[-l].__derivative__(z_s[-l])
 
-        ### Rest of the layers
-        # for i in reversed( range(1, len(self.w_matrices)) ):
-        for i in range(1, len(self.w_matrices)-1 ):
+            dw_0 = np.dot(x, dz)
+            db_0 = dz.reshape(-1)
 
-            dzo_dah = self.w_matrices[-i]
-            dcost_dah = np.dot(dcost_dzo, dzo_dah.T)
-            dah_dzh = self.backprop_activation.__apply__(i_outs[-i-1])
-            dzh_dwh = np.array(i_outs[-i-2]).reshape(1,len(i_outs[-i-2]))
-            dcost_wh = np.dot(dzh_dwh.T, dah_dzh * dcost_dah)
-            dcost_bh = dcost_dah * dah_dzh
-
-            self.w_matrices[-i-1] -= lr * dcost_wh
-            self.bias_vectors[-i-1] -= lr * dcost_bh.reshape(dcost_bh.shape[1])
-            dcost_dzo = dcost_dah
+            self.w_matrices[-l] -= lr * dw_0
+            self.bias_vectors[-l] -= lr * db_0
 
     def train(self, X, Y, epochs=100):
         X = np.array(X)
         Y = np.array(Y)
         n_samples = len(X)
         y_loss = Y.reshape(n_samples)
-
         for i in range(epochs):
             p_loss = []
             print(f"===== epoch {i+1}/{epochs} =====")
             for x, y in zip(X,Y):
                 t = time()
-                p, i_outs = self.feed_forward(x)
+                p, z_s, a_s = self.feed_forward(x)
                 p_loss.append(p[0])
-                self.back_propagate(x, y, p, i_outs)
+                self.back_propagate_c(x, y, p, z_s, a_s)
             loss = self.loss.__apply__(p_loss, y_loss)
             print(f"loss = {loss}")
             print(f"epoch {i} took {round(time()-t, 4)} seconds.")
@@ -202,20 +211,23 @@ class NeuralNet(object):
 if __name__ == "__main__":
     np.random.seed(22)
 
-    # num_samples = 100
+    
+    num_samples = 100
 
-    # nn = NeuralNet()
-    # nn.add_input_layer(1)
-    # nn.add_hidden_layer(32, activation="relu")
-    # nn.add_hidden_layer(16, activation="relu")
-    # nn.add_output_layer(1, activation="linear")
-    # nn.compile(loss="mse")
-    # x = [ [np.random.randint(0,10)/10] for _ in range(num_samples) ]
-    # y = [ [x_val[0]+1] for x_val in x ]
-    # nn.train(x, y)
-    # nn.save("models/sample_model")
+    nn = NeuralNet()
+    nn.add_input_layer(1)
+    nn.add_hidden_layer(128, activation="linear")
+    nn.add_output_layer(1, activation="linear")
+    nn.compile(loss="mse")
+    x = [ [np.random.randint(0,10)/10] for _ in range(num_samples) ]
+    y = [ [x_val[0]*20+1] for x_val in x ]
+
+    nn.train(x, y)
+    nn.save("models/sample_model")
+    
 
     nn = NeuralNet()
     nn.load("models/sample_model")
-    p, _ = nn.feed_forward([0.5])
+
+    p, _ , _= nn.feed_forward([0.2])
     print(p)
