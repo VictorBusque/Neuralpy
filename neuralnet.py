@@ -45,7 +45,7 @@ class Linear:
         return x
 
     def __derivative__(self, x):
-        return 1
+        return np.ones( x.shape )
 
 class ReLU:
     def __apply__(self, x):
@@ -74,7 +74,7 @@ class CategoricalCrossEntropy:
 
 class MeanSquaredError:
     def __apply__(self, p, y):
-        return np.sum( (p-y)**2 )/len(p)
+        return np.sum( (y-p)**2 )/len(p)
 
 
 ###################################################################
@@ -107,7 +107,8 @@ class NeuralNet(object):
         self.input_layer = Layer(n_neurons)
 
     def add_hidden_layer(self, n_neurons, activation="linear"):
-        self.hidden_layers.append( Layer(n_neurons, activation) )
+        if self.hidden_layers: print("There's already a hidden layer, skipping.")
+        else: self.hidden_layers.append( Layer(n_neurons, activation) )
 
     def add_output_layer(self, n_neurons, activation=None):
         self.output_layer = Layer(n_neurons, activation=activation)
@@ -153,46 +154,55 @@ class NeuralNet(object):
             a_s.append(x)
         return x, np.array(z_s), np.array(a_s)
 
+
     def back_propagate_c(self, x, y, p, z_s, a_s, lr=10e-4):
         p = np.array(p).reshape((1,len(p)))
         y = np.array(y).reshape((1,len(y)))
+        a_s = [np.array([a]) for a in a_s]
 
-        dL = 1
-        da = dL * (p-y) # da_1 ~ dy
-        dz = da * self.activations[-1].__derivative__(z_s[-1])
+        dz = [None]*len(self.w_matrices)
+
+        l = -1
+        da = (a_s[l]-y)
+        dz[l] =  da * self.activations[l].__derivative__(z_s[l])
         
-        dw = np.dot(a_s[-2].reshape( (len(a_s[-2]), 1) ), dz)
-        db = dz.reshape(-1)
+        dw = a_s[l-1].T.dot(dz[l])
+        db = dz[l].reshape(-1)
         
-        self.w_matrices[-1] -= lr * dw
-        self.bias_vectors[-1] -= lr * db
+        self.w_matrices[l] -= lr * dw
+        self.bias_vectors[l] -= lr * db
 
-        for l in range( 2, len(self.w_matrices) ):
-            da = np.dot(dz, self.w_matrices[-l+1].T)
-            dz = da * self.activations[-l].__derivative__(z_s[-l])
+        for l in range( 2, len(self.w_matrices)+1 ):
+            l = -l
+            da = dz[l+1].dot(self.w_matrices[l+1].T)
+            dz[l] =  da * self.activations[l].__derivative__(z_s[l])
 
-            dw_0 = np.dot(x, dz)
-            db_0 = dz.reshape(-1)
+            dw = a_s[l-1].T.dot(dz[l])
+            db = dz[l].reshape(-1)
 
-            self.w_matrices[-l] -= lr * dw_0
-            self.bias_vectors[-l] -= lr * db_0
+            self.w_matrices[l] -= lr * dw
+            self.bias_vectors[l] -= lr * db
 
     def train(self, X, Y, epochs=100):
         X = np.array(X)
         Y = np.array(Y)
         n_samples = len(X)
-        y_loss = Y.reshape(n_samples)
+        y_s = Y.reshape(n_samples)
+        loss = np.zeros(epochs)
         for i in range(epochs):
-            p_loss = []
+            t = time()
+            p_s = np.zeros( n_samples )
             print(f"===== epoch {i+1}/{epochs} =====")
-            for x, y in zip(X,Y):
-                t = time()
+            for j, (x, y) in enumerate(zip(X,Y)):
                 p, z_s, a_s = self.feed_forward(x)
-                p_loss.append(p[0])
+                p_s[j] = p[0]
                 self.back_propagate_c(x, y, p, z_s, a_s)
-            loss = self.loss.__apply__(p_loss, y_loss)
-            print(f"loss = {loss}")
-            print(f"epoch {i} took {round(time()-t, 4)} seconds.")
+            loss[i] = self.loss.__apply__(p_s, y_s)
+            print(f"loss = {loss[i]}")
+            print(f"epoch {i+1} took {round(time()-t, 4)} seconds.")
+            if loss[i] == loss[i-1]: 
+                print("Training converged.")
+                break
 
     def save(self, filename):
         np.save(f'{filename}_weights.npy', self.w_matrices)
@@ -212,7 +222,7 @@ if __name__ == "__main__":
     np.random.seed(22)
 
     
-    num_samples = 100
+    num_samples = 150
 
     nn = NeuralNet()
     nn.add_input_layer(1)
@@ -220,7 +230,7 @@ if __name__ == "__main__":
     nn.add_output_layer(1, activation="linear")
     nn.compile(loss="mse")
     x = [ [np.random.randint(0,10)/10] for _ in range(num_samples) ]
-    y = [ [x_val[0]*20+1] for x_val in x ]
+    y = [ [x_val[0]*10*2] for x_val in x ]
 
     nn.train(x, y)
     nn.save("models/sample_model")
@@ -229,5 +239,5 @@ if __name__ == "__main__":
     nn = NeuralNet()
     nn.load("models/sample_model")
 
-    p, _ , _= nn.feed_forward([0.2])
+    p, _ , _= nn.feed_forward([0.9])
     print(p)
